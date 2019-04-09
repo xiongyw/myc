@@ -14,7 +14,7 @@ extern FILE* yyin;
 #define RADIX_MASK_10   ((1<<10))
 #define RADIX_MASK_16   ((1<<16))
 
-int g_radix = RADIX_MASK_10;
+int g_radix = RADIX_MASK_10 | RADIX_MASK_16;
 
 void yyerror(const char* s);
 void prompt(void);
@@ -210,6 +210,7 @@ void prompt()
 
 void print_nibble(unsigned char x)
 {
+    printf(":");
     for (int i = 3; i >= 0; i --) {
         if (x & (1 << i)) {
             printf("1");
