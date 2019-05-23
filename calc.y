@@ -47,9 +47,18 @@ void output_int(int x);
  * declare tokens (terminals) and their semantic value types.
  * Note that no need to declare literal character tokens, unless we need
  * to declare their semantic value types.
+ *
+ * bison also allows to declare strings as aliaes for tokens, for example,
+ *   %token ASR ">>>"
+ * this defines the token ASR and lets you use ASR and ">>>" interchangeably in
+ * the production rules; also the syntax error msgs passed to yyerror() from
+ * the parser will reference the alias instead of the token name.
+ * however, the lexer must still return the internal token value for ASR when
+ * the token is read, not a string.
  */
 %token <info> INT HEXINT TOGGLE
-%token EOL SHL SHR ASR
+%token EOL SHL SHR
+%token ASR ">>>"
 
 %left  SHL SHR ASR
 %left  '+' '-'
@@ -119,7 +128,7 @@ expr:   INT            { int t; sscanf($1.text, "%d", &t); free((void*)$1.text);
       | expr '|' expr  { $$ = $1 | $3; }
       | expr '^' expr  { $$ = $1 ^ $3; }
       | expr SHL expr  { $$ = $1 << ($3 % NUM_BITS); }
-      | expr ASR expr  { $$ = $1 >> ($3 % NUM_BITS); } // arithmetic shift right
+      | expr ">>>" expr  { $$ = $1 >> ($3 % NUM_BITS); } // arithmetic shift right
       | expr SHR expr  { $$ = (unsigned int)$1 >> ($3 % NUM_BITS); } // logic shift right
       | '(' expr ')'   { $$ = $2; }
       | '~' expr       { $$ = ~$2; }
