@@ -3,12 +3,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <inttypes.h>
 
 extern int yylex();
 extern int yyparse();
 extern FILE* yyin;
 
-#define NUM_BITS        (sizeof(int)*8)
+typedef int64_t myc_t;
+typedef uint64_t umyc_t;
+
+#define NUM_BITS        (sizeof(myc_t)*8)
 #define RADIX_MASK_2    ((1<<2))
 #define RADIX_MASK_8    ((1<<8))
 #define RADIX_MASK_10   ((1<<10))
@@ -20,12 +25,13 @@ void yyerror(const char* s);
 void prompt(void);
 void help(void);
 void toggle_output_format(const char* s);
-void output_int_radix(int x, int radix);
-void output_int(int x);
+void output_value(myc_t x);
 
 %}
 
 %code requires {  /* also export the following to flex */
+
+    typedef int64_t myc_t;
 
     typedef struct {
         const char* text;
@@ -38,7 +44,7 @@ void output_int(int x);
  * (termainal or nonterminal) value can have.
  */
 %union {
-    int ival;
+    myc_t ival;
     //float fval;
     TokenInfo info;
 }
@@ -112,13 +118,13 @@ eval:   /* nothing. matches at beginning of input */
 line:   EOL            { ; }
       | '?' EOL        { help(); }
       | 'q' EOL        { printf("bye!\n"); exit(0); }
-      | expr EOL       { output_int($1); }
+      | expr EOL       { output_value($1); }
       | TOGGLE EOL     { toggle_output_format($1.text); free((void*)$1.text); }
       | error EOL      { yyerrok; /* resume normal parsing */ }
       ;
 
-expr:   INT            { int t; sscanf($1.text, "%d", &t); free((void*)$1.text); $$ = t; }
-      | HEXINT         { int t; sscanf($1.text, "%x", &t); free((void*)$1.text); $$ = t; }
+expr:   INT            { myc_t t; sscanf($1.text, "%"SCNd64, &t); free((void*)$1.text); $$ = t; }
+      | HEXINT         { myc_t t; sscanf($1.text, "%"SCNx64, &t); free((void*)$1.text); $$ = t; }
       | expr '+' expr  { $$ = $1 + $3; }
       | expr '-' expr  { $$ = $1 - $3; }
       | expr '*' expr  { $$ = $1 * $3; }
@@ -129,7 +135,7 @@ expr:   INT            { int t; sscanf($1.text, "%d", &t); free((void*)$1.text);
       | expr '^' expr  { $$ = $1 ^ $3; }
       | expr SHL expr  { $$ = $1 << ($3 % NUM_BITS); }
       | expr ">>>" expr  { $$ = $1 >> ($3 % NUM_BITS); } // arithmetic shift right
-      | expr SHR expr  { $$ = (unsigned int)$1 >> ($3 % NUM_BITS); } // logic shift right
+      | expr SHR expr  { $$ = (umyc_t)$1 >> ($3 % NUM_BITS); } // logic shift right
       | '(' expr ')'   { $$ = $2; }
       | '~' expr       { $$ = ~$2; }
       | '-' expr       { $$ = -$2; }
@@ -217,7 +223,8 @@ void prompt()
     printf("> ");
 }
 
-void print_nibble(unsigned char x)
+// print the LSB 4-bit
+void print_nibble(uint8_t x)
 {
     printf(":");
     for (int i = 3; i >= 0; i --) {
@@ -229,58 +236,44 @@ void print_nibble(unsigned char x)
     }
 }
 
-void print_binary(int x)
+void print_binary(myc_t x)
 {
-#if (0)
-    int nbits = sizeof(x) * 8;
-    int started = 0;
-    for (int i = nbits - 1; i >= 0; i --) {
-        if (x & (1 << i)) {
-            started = 1;
-            printf("1");
-        } else {
-            if (started)
-                printf("0");
-        }
+    int n_nibbles = sizeof(x) * 2;
+    uint8_t nibble;
+    for (int i = n_nibbles - 1; i >= 0; i --) {
+        nibble = (uint8_t)((umyc_t)x >> (i * 4));
+        print_nibble(nibble);
     }
-
-    if (!started)
-        printf("0");
-#else
-    if (x == 0) {
-        printf("0000");
-    } else {
-        int n_nibbles = sizeof(x) * 2;
-        int started = 0;
-        unsigned char nibble;
-        for (int i = n_nibbles - 1; i >= 0; i --) {
-            nibble = (unsigned char)((unsigned int)x >> (i * 4));
-            if (nibble) {
-               print_nibble(nibble);
-               started = 1;
-            } else if (started) {
-               print_nibble(nibble);
-            }
-        }
-    }
-#endif
 }
 
-void output_int(int x)
+void output_value(myc_t x)
 {
+    if (g_radix & RADIX_MASK_2) {
+        printf("   ");
+        for (int i = sizeof(myc_t) * 8 - 1; i >= 0; i --) {
+            printf("%d", i / 10);
+            if (i % 4 == 0) printf(" ");
+        }
+        printf("\n   ");
+        for (int i = sizeof(myc_t) * 8 - 1; i >= 0; i --) {
+            printf("%d", i % 10);
+            if (i % 4 == 0) printf(" ");
+        }
+        printf("\n");
+    }
     if (g_radix & RADIX_MASK_2) {
         printf("0b");
         print_binary(x);
         printf(" ");
     }
     if (g_radix & RADIX_MASK_8) {
-        printf("0%o ", x);
+        printf("0%"PRIo64" ", x);
     }
     if (g_radix & RADIX_MASK_10) {
-        printf("%d ", x);
+        printf("%"PRId64" ", x);
     }
     if (g_radix & RADIX_MASK_16) {
-        printf("0x%X ", x);
+        printf("0x%"PRIx64" ", x);
     }
 
     printf("\n");
@@ -288,7 +281,7 @@ void output_int(int x)
 
 void help(void)
 {
-    printf("- supported operators for integers:\n");
+    printf("- supported operators for 64-bit integers:\n");
     printf("    . arithmetic `+=*/%%`\n");
     printf("    . bitwise `&|^~`\n");
     printf("    . logical shift `<<`, `>>`\n");
